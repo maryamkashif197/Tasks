@@ -1,0 +1,128 @@
+# ─── Python ────────────────────────────────────────────────────────────────────
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Virtual environments
+.env/
+.venv/
+env/
+venv/
+ENV/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*,cover
+.hypothesis/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# pyenv
+.python-version
+
+# pipenv / poetry lockfiles (ignore if you want to check them in)
+Pipfile.lock
+poetry.lock
+
+# dotenv
+.env
+.env.*
+
+# ─── AWS & Terraform / CloudFormation ────────────────────────────────────────
+# AWS CLI
+.aws/credentials
+.aws/config
+
+# Private key materials
+*.pem
+!example.pem
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+terraform.tfvars
+*.auto.tfvars
+*.tfplan
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CloudFormation packaged templates
+packaged-template.yaml
+
+# Serverless Framework
+.serverless/
+
+# AWS SAM
+.aws-sam/
+
+# ─── Docker ───────────────────────────────────────────────────────────────────
+docker-compose.override.yml
+*.log
+logs/
+**/logs/*
+**/*.log
+
+# ─── Node.js (if used) ────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+
+# ─── Build & Distribution ────────────────────────────────────────────────────
+build/
+dist/
+tmp/
+temp/
+*.egg-info/
+.eggs/
+
+# ─── IDEs & Editors ──────────────────────────────────────────────────────────
+# VS Code
+.vscode/
+
+# JetBrains (PyCharm, IntelliJ, WebStorm…)
+.idea/
+*.iml
+
+# Other editors
+*.suo
+*.user
+*.sln.docstates
+
+# ─── OS Files ─────────────────────────────────────────────────────────────────
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ─── Miscellaneous ────────────────────────────────────────────────────────────
+*.swp
+*.swo
