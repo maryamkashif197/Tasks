@@ -2,12 +2,131 @@ require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
 const multer  = require('multer');
+const session  = require('express-session');
+const { Issuer, generators } = require('openid-client');  // works with 4.9.1
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const app     = express();
+
+// Session Middleware
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: false }       //  
+}));
+
 
 // Enable CORS & JSON parsing
 app.use(cors());
 app.use(express.json());
+
+let oidc;   // holds the configured client
+
+(async () => {
+  const issuer = await Issuer.discover(process.env.COGNITO_ISSUER);
+  oidc = new issuer.Client({
+    client_id:     process.env.COGNITO_CLIENT_ID,
+    client_secret: process.env.COGNITO_CLIENT_SECRET,
+    redirect_uris: [process.env.REDIRECT_URI],
+    response_types:['code']
+  });
+  console.log('OpenID client initialised');
+})().catch(err => {
+  console.error('OpenID init error:', err);
+  process.exit(1);
+});
+
+function ensureAuth(req, res, next) {
+  if (!req.session.user) return res.status(401).json({ error: 'Auth required' });
+  next();
+}
+
+app.get('/login', (req, res) => {
+  const state = generators.state();
+  const nonce = generators.nonce();
+  req.session.state = state;
+  req.session.nonce = nonce;
+
+  const url = oidc.authorizationUrl({
+    scope: 'openid email',
+    state,
+    nonce
+  });
+  res.redirect(url);
+});
+
+app.get('/auth/callback', async (req, res) => {
+  try {
+    const params   = oidc.callbackParams(req);
+    const tokens   = await oidc.callback(process.env.REDIRECT_URI, params, {
+      state: req.session.state,
+      nonce: req.session.nonce
+    });
+
+    const userInfo = await oidc.userinfo(tokens.access_token);
+    req.session.user      = userInfo;          // store whatever you need
+    req.session.tokens    = tokens;
+    res.redirect('/');                         // or to your SPA entry
+  } catch (err) {
+    console.error('Callback error:', err);
+    res.status(500).send('Auth error');
+  }
+});
+
+app.get('/logout', (req, res) => {
+  req.session.destroy(() => {
+    const url =
+      `${process.env.COGNITO_ISSUER.replace('/'+process.env.COGNITO_ISSUER.split('/').pop(), '')}`
+      + `/logout?client_id=${process.env.COGNITO_CLIENT_ID}`
+      + `&logout_uri=${encodeURIComponent(process.env.LOGOUT_URI)}`;
+    res.redirect(url);
+  });
+});
+
+app.get('/login', (req, res) => {
+  const state = generators.state();
+  const nonce = generators.nonce();
+  req.session.state = state;
+  req.session.nonce = nonce;
+
+  const url = oidc.authorizationUrl({
+    scope: 'openid email phone',
+    state,
+    nonce
+  });
+  res.redirect(url);
+});
+
+app.get('/auth/callback', async (req, res) => {
+  try {
+    const params   = oidc.callbackParams(req);
+    const tokens   = await oidc.callback(process.env.REDIRECT_URI, params, {
+      state: req.session.state,
+      nonce: req.session.nonce
+    });
+
+    const userInfo = await oidc.userinfo(tokens.access_token);
+    req.session.user      = userInfo;          // store whatever you need
+    req.session.tokens    = tokens;
+    res.redirect('/');                         // or to your SPA entry
+  } catch (err) {
+    console.error('Callback error:', err);
+    res.status(500).send('Auth error');
+  }
+});
+
+app.get('/logout', (req, res) => {
+  req.session.destroy(() => {
+    const url =
+      `${process.env.COGNITO_ISSUER.replace('/'+process.env.COGNITO_ISSUER.split('/').pop(), '')}`
+      + `/logout?client_id=${process.env.COGNITO_CLIENT_ID}`
+      + `&logout_uri=${encodeURIComponent(process.env.LOGOUT_URI)}`;
+    res.redirect(url);
+  });
+});
+
+
+
 
 // Multer → store uploads in memory
 const upload = multer({ storage: multer.memoryStorage() });
@@ -36,6 +155,10 @@ async function uploadToS3(file) {
 
 // RDS Pool (PostgreSQL)
 const { pool } = require('./db/rds-config');
+
+// ——— Tasks CRUD endpoints ———
+app.use('/tasks', ensureAuth);
+
 
 // Lambda‐style handlers
 const createTask  = require('./lambda/tasks/createTask');
