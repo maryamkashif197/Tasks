@@ -83,50 +83,6 @@ app.get('/logout', (req, res) => {
   });
 });
 
-app.get('/login', (req, res) => {
-  const state = generators.state();
-  const nonce = generators.nonce();
-  req.session.state = state;
-  req.session.nonce = nonce;
-
-  const url = oidc.authorizationUrl({
-    scope: 'openid email phone',
-    state,
-    nonce
-  });
-  res.redirect(url);
-});
-
-app.get('/auth/callback', async (req, res) => {
-  try {
-    const params   = oidc.callbackParams(req);
-    const tokens   = await oidc.callback(process.env.REDIRECT_URI, params, {
-      state: req.session.state,
-      nonce: req.session.nonce
-    });
-
-    const userInfo = await oidc.userinfo(tokens.access_token);
-    req.session.user      = userInfo;          // store whatever you need
-    req.session.tokens    = tokens;
-    res.redirect('/');                         // or to your SPA entry
-  } catch (err) {
-    console.error('Callback error:', err);
-    res.status(500).send('Auth error');
-  }
-});
-
-app.get('/logout', (req, res) => {
-  req.session.destroy(() => {
-    const url =
-      `${process.env.COGNITO_ISSUER.replace('/'+process.env.COGNITO_ISSUER.split('/').pop(), '')}`
-      + `/logout?client_id=${process.env.COGNITO_CLIENT_ID}`
-      + `&logout_uri=${encodeURIComponent(process.env.LOGOUT_URI)}`;
-    res.redirect(url);
-  });
-});
-
-
-
 
 // Multer → store uploads in memory
 const upload = multer({ storage: multer.memoryStorage() });
