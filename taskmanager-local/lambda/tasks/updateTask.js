@@ -1,81 +1,105 @@
-const { pool } = require('../../db/rds-config');
-const { dynamoDB, sns } = require('../../db/aws-config');
+// lambda/tasks/updateTask.js
+require('dotenv').config();
+const { pool }          = require('../../db/rds-config');
+const { dynamoDB, snsClient } = require('../../db/aws-config');
+const { GetCommand, UpdateCommand }   = require('@aws-sdk/lib-dynamodb');
+const { PublishCommand }              = require('@aws-sdk/client-sns');
+
+const DDB_TABLE = process.env.DYNAMO_TABLE || 'Tasks';
+const RDS_TABLE = process.env.DB_TASK;        // "tasks"
+const RDS_SCHEMA= process.env.DB_SCHEMA_TASK; // "tasks_data"
+const FULL_RDS  = `${RDS_SCHEMA}.${RDS_TABLE}`;
 
 module.exports.handler = async (event) => {
-    const taskId = event.pathParameters.taskId;
-    const data = JSON.parse(event.body);
+  const taskId = event.pathParameters?.taskId;
+  if (!taskId) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: 'Missing taskId in path' })
+    };
+  }
 
-    try {
-        //  Check if the task exists in DynamoDB
-        const existingTask = await dynamoDB.get({
-            TableName: 'Tasks',
-            Key: { taskId }
-        }).promise();
+  let data;
+  try {
+    data = JSON.parse(event.body || '{}');
+  } catch {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: 'Invalid JSON body' })
+    };
+  }
 
-        if (!existingTask.Item) {
-            return {
-                statusCode: 404,
-                body: JSON.stringify({ message: 'Task not found' })
-            };
-        }
+  const fields = Object.keys(data);
+  if (fields.length === 0) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: 'No fields provided to update' })
+    };
+  }
 
-        //  Update task in DynamoDB
-        const updateFields = Object.keys(data)
-            .map(key => `#${key} = :${key}`)
-            .join(', ');
-
-        const expressionAttributeNames = {};
-        const expressionAttributeValues = {};
-
-        for (const key of Object.keys(data)) {
-            expressionAttributeNames[`#${key}`] = key;
-            expressionAttributeValues[`:${key}`] = data[key];
-        }
-
-        await dynamoDB.update({
-            TableName: 'Tasks',
-            Key: { taskId },
-            UpdateExpression: `SET ${updateFields}`,
-            ExpressionAttributeNames: expressionAttributeNames,
-            ExpressionAttributeValues: expressionAttributeValues
-        }).promise();
-
-        // Update task in RDS (PostgreSQL)
-        const keys = Object.keys(data);
-        const values = Object.values(data);
-        const setClause = keys.map((key, index) => `${key} = $${index + 1}`).join(', ');
-
-        // Add taskId as the last parameter for WHERE clause
-        await pool.query(
-            `UPDATE Tasks SET ${setClause} WHERE task_id = $${keys.length + 1}`,
-            [...values, taskId]
-        );
-
-        // Publish to SNS about the update
-        const now = new Date().toISOString();
-        const userId = event.requestContext?.authorizer?.userId || 'unknown';
-
-        await sns.publish({
-            TopicArn: 'arn:aws:sns:eu-north-1:183631305334:TaskNotificationTopic',
-            Message: JSON.stringify({
-                event: 'task_updated',
-                taskId,
-                userId,
-                updatedFields: data,
-                timestamp: now
-            })
-        }).promise();
-
-        return {
-            statusCode: 200,
-            body: JSON.stringify({ message: 'Task updated successfully' })
-        };
-
-    } catch (error) {
-        console.error(error);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ message: 'Internal Server Error', error: error.message })
-        };
+  try {
+    // 1) Fetch existing item from DynamoDB
+    const getResp = await dynamoDB.send(new GetCommand({
+      TableName: DDB_TABLE,
+      Key:       { taskId }
+    }));
+    if (!getResp.Item) {
+      return { statusCode: 404, body: JSON.stringify({ error: 'Task not found' }) };
     }
+
+    // 2) Build DynamoDB UpdateExpression
+    const now = new Date().toISOString();
+    const exprNames  = { '#updatedAt': 'updatedAt' };
+    const exprValues = { ':updatedAt': now };
+    const setParts   = ['#updatedAt = :updatedAt'];
+
+    for (const key of fields) {
+      exprNames[`#${key}`]   = key;
+      exprValues[`:${key}`]  = data[key];
+      setParts.push(`#${key} = :${key}`);
+    }
+
+    await dynamoDB.send(new UpdateCommand({
+      TableName:                 DDB_TABLE,
+      Key:                       { taskId },
+      UpdateExpression:          `SET ${setParts.join(', ')}`,
+      ExpressionAttributeNames:  exprNames,
+      ExpressionAttributeValues: exprValues
+    }));
+
+    // 3) Mirror the update in Postgres
+    //    include updated_at column in RDS as well
+    const rdsCols  = [...fields, 'updated_at'];
+    const setClause= rdsCols.map((col,i) => `${col} = $${i+1}`).join(', ');
+    const rdsVals  = [...fields.map(f => data[f]), now, taskId];
+
+    await pool.query(
+      `UPDATE ${FULL_RDS} SET ${setClause} WHERE task_id = $${rdsVals.length}`,
+      rdsVals
+    );
+
+    // 4) Publish to SNS
+    await snsClient.send(new PublishCommand({
+      TopicArn: process.env.SNS_TOPIC_ARN,
+      Subject:  'Task Updated',
+      Message:  JSON.stringify({
+        event:         'task_updated',
+        taskId,
+        updatedFields: data,
+        timestamp:     now
+      })
+    }));
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ message: 'Task updated successfully' })
+    };
+
+  } catch (err) {
+    console.error('updateTask error:', err);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ message: 'Internal Server Error', error: err.message })
+    };
+  }
 };

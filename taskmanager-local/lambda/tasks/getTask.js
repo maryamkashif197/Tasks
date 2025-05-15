@@ -1,37 +1,45 @@
-const { dynamoDB, sns, uuidv4 } = require('../../db/aws-config');
+// lambda/tasks/getTask.js
+require('dotenv').config();
+const { dynamoDB }   = require('../../db/aws-config');
+const { GetCommand } = require('@aws-sdk/lib-dynamodb');
 
 module.exports.handler = async (event) => {
-    const taskId = event.pathParameters.taskId;
+  // 0) Grab the ID from the path (/tasks/{taskId})
+  const taskId = event.pathParameters && event.pathParameters.taskId;
+  if (!taskId) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: 'Missing taskId in path' })
+    };
+  }
 
-    try{
-    
-        //get task from dynamoDB
-        const task = await dynamoDB.get({
-            TableName: 'Tasks', // the table name 
-            Key: {
-                taskId // fetching the task by ID
-            }
-        }).promise();
+  try {
+    // 1) Fetch from DynamoDB
+    const tableName = process.env.DYNAMO_TABLE || 'Tasks';
+    const result = await dynamoDB.send(new GetCommand({
+      TableName: tableName,
+      Key: { taskId }
+    }));
 
-        //returning back to the user that the task does not exist in the database if not found
-        if(!task.Item){
-            return {
-                statusCode: 404,
-                body: JSON.stringify({error: 'Task not found'})
-            }
-        }
-
-         //returning the task back to the user
-        return {
-                statusCode: 200,
-                body: JSON.stringify(task.Item)
-        }
-
-    }catch(error){
-        console.log(error);
-        return{
-            statusCode: 500,
-            body: JSON.stringify({error: error.message}) //returning the error message
-        }
+    // 2) Not found?
+    if (!result.Item) {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({ error: 'Task not found' })
+      };
     }
-}
+
+    // 3) Return the item
+    return {
+      statusCode: 200,
+      body: JSON.stringify(result.Item)
+    };
+
+  } catch (error) {
+    console.error('getTask error:', error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: error.message })
+    };
+  }
+};

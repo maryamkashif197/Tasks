@@ -1,53 +1,89 @@
-const { pool } = require('../../db/rds-config');
-const { dynamoDB, sns, uuidv4 } = require('../../db/aws-config');
+// lambda/tasks/createTask.js
+require('dotenv').config();                       // ← picks up your .env
+const { pool }        = require('../../db/rds-config');
+const { 
+  dynamoDB, 
+  PutCommand, 
+  snsClient, 
+  PublishCommand, 
+  uuidv4 
+} = require('../../db/aws-config');
+
+// Build schema.table from your .env
+const TABLE_TASK    = process.env.DB_TASK;        // "tasks"
+const SCHEMA_TASK   = process.env.DB_SCHEMA_TASK; // "tasks_data"
+const FULL_TASK_TAB = `${SCHEMA_TASK}.${TABLE_TASK}`;
 
 module.exports.handler = async (event) => {
   try {
-    const data = JSON.parse(event.body);
-    const taskId = `task-${uuidv4()}`;
+    // 1) Parse incoming JSON
+    const data      = JSON.parse(event.body);
+    const taskId    = uuidv4();
     const timestamp = new Date().toISOString();
 
+    // 2) Build a JS task object
     const task = {
       taskId,
-      title: data.title,
-      userId: data.userId,
-      description: data.description,
-      status: 'Pending',
-      attachments: Array.isArray(data.attachments) ? data.attachments : [],
-      createdAt: timestamp,
-      updatedAt: timestamp
+      title:       data.title,
+      description: data.description || null,
+      status:      'Pending',
+      userId:      data.userId,
+      attachments: Array.isArray(data.attachments) 
+                     ? data.attachments 
+                     : [],
+      createdAt:   timestamp,
+      updatedAt:   timestamp
     };
-    
-    // 1. Insert into PostgreSQL (RDS)
-   await pool.query(
-  `INSERT INTO tasks (task_id, title, description, user_id, status, attachments, created_at, updated_at)
-   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-  [
-    task.taskId, task.title, task.description, task.userId, task.status, JSON.stringify(task.attachments), task.createdAt, task.updatedAt,
-  ]);
 
-    // 2. Insert into DynamoDB (AWS)
-    await dynamoDB.put({
-    TableName: 'Tasks',
-    Item: task,
-    }).promise();
+    // 3) Insert into Postgres → tasks_data.tasks
+    await pool.query(
+      `INSERT INTO ${FULL_TASK_TAB}
+         (task_id, title, description, user_id, status, attachments, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [
+        task.taskId,
+        task.title,
+        task.description,
+        task.userId,
+        task.status,
+        task.attachments,  // passed as a JS array → TEXT[]
+        task.createdAt,
+        task.updatedAt
+      ]
+    );
 
-    // 3. Publish to SNS (AWS)
-    await sns.publish({
-      TopicArn: 'arn:aws:sns:eu-north-1:183631305334:TaskNotificationTopic',
-      Message: JSON.stringify({
-        event: 'task_created',
+    // 4) Insert into DynamoDB
+    await dynamoDB.send(new PutCommand({
+      TableName: 'Tasks',
+      Item:      task
+    }));
+
+    // 5) Publish to SNS
+    await snsClient.send(new PublishCommand({
+      TopicArn: process.env.SNS_TOPIC_ARN,
+      Subject:  'Task Created',
+      Message:  JSON.stringify({
+        event:   'task_created',
         taskId,
-        userId,
-        timestamp: now
+        userId:  task.userId,
+        timestamp
       })
-    }).promise();
+    }));
 
+    // 6) Return the new task summary
     return {
       statusCode: 201,
-      body: JSON.stringify({ taskId: task.taskId, title: task.title, description: task.description, status: task.status }),
+      body: JSON.stringify({
+        taskId:      task.taskId,
+        title:       task.title,
+        description: task.description,
+        status:      task.status,
+        attachments: task.attachments
+      })
     };
+
   } catch (error) {
+    console.error('createTask error:', error);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: error.message })
