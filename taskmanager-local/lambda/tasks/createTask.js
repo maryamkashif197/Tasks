@@ -27,7 +27,7 @@ module.exports.handler = async (event) => {
       title:       data.title,
       description: data.description || null,
       status:      'Pending',
-      userId:      data.userId,
+      userId:      data.userId ,
       attachments: Array.isArray(data.attachments) 
                      ? data.attachments 
                      : [],
@@ -77,6 +77,8 @@ module.exports.handler = async (event) => {
         taskId:      task.taskId,
         title:       task.title,
         description: task.description,
+        userId:      task.userId,
+        createdAt:   task.createdAt,
         status:      task.status,
         attachments: task.attachments
       })
