@@ -75,11 +75,12 @@ app.get('/auth/callback', async (req, res) => {
 
 app.get('/logout', (req, res) => {
   req.session.destroy(() => {
-    const url =
-      `${process.env.COGNITO_ISSUER.replace('/'+process.env.COGNITO_ISSUER.split('/').pop(), '')}`
-      + `/logout?client_id=${process.env.COGNITO_CLIENT_ID}`
-      + `&logout_uri=${encodeURIComponent(process.env.LOGOUT_URI)}`;
-    res.redirect(url);
+    res.clearCookie('connect.sid', { path: '/' });      // remove persistent cookie
+    const logoutUrl =
+      `${process.env.COGNITO_DOMAIN}/logout` +
+      `?client_id=${process.env.COGNITO_CLIENT_ID}` +
+      `&logout_uri=${encodeURIComponent(process.env.LOGOUT_URI)}`;
+    res.redirect(logoutUrl);
   });
 });
 
