@@ -159,15 +159,6 @@ cd frontend
 npm install
 ```
 
-#### Environment Configuration
-Create `.env` file in the frontend directory:
-```env
-REACT_APP_API_URL=https://your-api-gateway-url.amazonaws.com/pre-prod
-REACT_APP_COGNITO_USER_POOL_ID=eu-north-1_XXXXXXXXX
-REACT_APP_COGNITO_CLIENT_ID=your-client-id
-REACT_APP_COGNITO_DOMAIN=your-cognito-domain
-```
-
 #### Build and Deploy
 ```bash
 npm run build
