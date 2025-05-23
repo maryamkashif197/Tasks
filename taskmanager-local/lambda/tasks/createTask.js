@@ -1,13 +1,13 @@
 // lambda/tasks/createTask.js
 require('dotenv').config();                       // ← picks up your .env
-const { pool }        = require('../../db/rds-config');
+const { pool }        = require('./db/rds-config');
 const { 
   dynamoDB, 
   PutCommand, 
   snsClient, 
   PublishCommand, 
   uuidv4 
-} = require('../../db/aws-config');
+} = require('./db/aws-config');
 
 // Build schema.table from your .env
 const TABLE_TASK    = process.env.DB_TASK;        // "tasks"

@@ -50,7 +50,7 @@ module.exports.handler = async (event) => {
             Subject: 'Task Deleted',
             Message: JSON.stringify({
                 event: 'task_deleted',
-                taskId,
+                taskId, 
                 userId,
                 timestamp: now
             })
