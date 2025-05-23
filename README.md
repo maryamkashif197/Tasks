@@ -16,7 +16,7 @@ This project implements a modern serverless architecture using AWS services:
 - **API**: Amazon API Gateway for REST endpoints
 
 ## 🏗️ Architecture Diagram
-![Alt text](photo.jpg)
+![System Architecture](photo.png)  
 
 
 Key Data Flows:
